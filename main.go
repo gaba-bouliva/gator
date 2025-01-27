@@ -36,6 +36,8 @@ func main() {
 
 	app.RegisterCMD("login", handleLogin)
 	app.RegisterCMD("register", handleRegister)
+	app.RegisterCMD("reset", handleReset)
+	app.RegisterCMD("users", handleUsers)
 
 	args := os.Args
 
@@ -60,12 +62,9 @@ func main() {
 }
 
 func handleLogin(a *application.App, cmd application.Command) error {
-	if len(cmd.Arguments) < 1 {
-		log.Fatal("login command expects a single argument, username")
-	}
-
-	if len(strings.Trim(cmd.Arguments[0], " ")) < 1 {
-		log.Fatal("valid username required")
+	err := checkCMDArgs(cmd)
+	if err != nil {
+		return err
 	}
 
 	userName := cmd.Arguments[0]
@@ -85,13 +84,11 @@ func handleLogin(a *application.App, cmd application.Command) error {
 }
 
 func handleRegister(a *application.App, cmd application.Command) error {
-	if len(cmd.Arguments) < 1 {
-		log.Fatal("login command expects a single argument, username")
+	err := checkCMDArgs(cmd)
+	if err != nil {
+		return err
 	}
 
-	if len(strings.Trim(cmd.Arguments[0], " ")) < 1 {
-		log.Fatal("valid username required")
-	}
 	createUserParams := database.CreateUserParams{
 		ID:        int32(uuid.New().ID()),
 		Name:      cmd.Arguments[0],
@@ -107,7 +104,48 @@ func handleRegister(a *application.App, cmd application.Command) error {
 	if err != nil {
 		return err
 	}
-	fmt.Printf("New user registered: %+v", newUser)
+	fmt.Printf("New user registered: %+v\n", newUser)
 
+	return nil
+}
+
+func handleReset(a *application.App, cmd application.Command) error {
+	err := a.DB.DeleteAllUsers(context.Background())
+	if err != nil {
+		return err
+	}
+	fmt.Println("users table emptied!")
+	return nil
+}
+
+func handleUsers(a *application.App, cmd application.Command) error {
+	users, err := a.DB.GetUsers(context.Background())
+	if err != nil {
+		return err
+	}
+
+	currentUsername, err := a.Config.GetCurrentUser()
+	if err != nil {
+		return err
+	}
+	for _, u := range users {
+		if u.Name == currentUsername {
+			fmt.Printf("* %s (current)\n", u.Name)
+		} else {
+			fmt.Printf("* %s\n", u.Name)
+		}
+	}
+
+	return nil
+}
+
+func checkCMDArgs(cmd application.Command) error {
+	if len(cmd.Arguments) < 1 {
+		return fmt.Errorf(" %s command expects an argument", cmd.Name)
+	}
+	fmt.Println("command args length", len(cmd.Arguments))
+	if len(strings.Trim(cmd.Arguments[0], " ")) < 1 {
+		return fmt.Errorf("invalid argument provided")
+	}
 	return nil
 }
