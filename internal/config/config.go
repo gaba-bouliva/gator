@@ -9,21 +9,19 @@ import (
 )
 
 type Config struct {
-	DBUrl 							string 			`json:"db_url"`	
-	CurrentUserName			string			`json:"current_user_name"`
+	DBUrl           string `json:"db_url"`
+	CurrentUserName string `json:"current_user_name"`
 }
 
 const configFileName = ".gatorconfig.json"
 
-
 func Read() (*Config, error) {
-	filePath, err := getConfigFilePath()	
+	filePath, err := getConfigFilePath()
 	if err != nil {
 		return nil, err
 	}
-
-	file, err :=  os.Open(filePath)
-	if err != nil { 
+	file, err := os.Open(filePath)
+	if err != nil {
 		return nil, err
 	}
 	defer file.Close()
@@ -47,7 +45,12 @@ func Read() (*Config, error) {
 func (c *Config) SetUser(username string) error {
 	c.CurrentUserName = username
 
-	err := wirte(*c)
+	oldConfig, err := Read()
+	if err != nil {
+		return err
+	}
+	oldConfig.CurrentUserName = username
+	err = wirte(*oldConfig)
 	if err != nil {
 		return err
 	}
@@ -57,7 +60,7 @@ func (c *Config) SetUser(username string) error {
 
 func getConfigFilePath() (string, error) {
 	homeDir, err := os.UserHomeDir()
-	if err != nil { 
+	if err != nil {
 		return "", err
 	}
 	filePath := filepath.Join(homeDir, configFileName)
@@ -65,7 +68,7 @@ func getConfigFilePath() (string, error) {
 	return filePath, nil
 }
 
-func wirte(cfg Config) error { 
+func wirte(cfg Config) error {
 	updatedConfig, err := json.Marshal(cfg)
 	if err != nil {
 		return err
@@ -76,8 +79,8 @@ func wirte(cfg Config) error {
 		return err
 	}
 
-	file, err :=  os.OpenFile(filePath, os.O_WRONLY | os.O_CREATE | os.O_TRUNC, 0600)
-	if err != nil { 
+	file, err := os.OpenFile(filePath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0600)
+	if err != nil {
 		return err
 	}
 	defer file.Close()
@@ -87,8 +90,6 @@ func wirte(cfg Config) error {
 		fmt.Println("error writing to file")
 		return err
 	}
-	
+
 	return nil
 }
-
-
