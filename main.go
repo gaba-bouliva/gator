@@ -3,8 +3,12 @@ package main
 import (
 	"context"
 	"database/sql"
+	"encoding/xml"
 	"fmt"
+	"html"
+	"io"
 	"log"
+	"net/http"
 	"os"
 	"strings"
 	"time"
@@ -38,6 +42,8 @@ func main() {
 	app.RegisterCMD("register", handleRegister)
 	app.RegisterCMD("reset", handleReset)
 	app.RegisterCMD("users", handleUsers)
+	app.RegisterCMD("agg", handleAgg)
+	app.RegisterCMD("addfeed", handleAddFeed)
 
 	args := os.Args
 
@@ -59,6 +65,103 @@ func main() {
 		fmt.Println(err)
 		os.Exit(1)
 	}
+}
+
+func handleAddFeed(a *application.App, cmd application.Command) error {
+	nbrArgs := 2
+	err := checkCMDArgs(cmd, nbrArgs)
+	if err != nil {
+		return err
+	}
+	currentUsername, err := a.Config.GetCurrentUser()
+	if err != nil {
+		return err
+	}
+	user, err := a.DB.GetUser(context.Background(), currentUsername)
+	if err != nil {
+		return err
+	}
+
+	// feed, err := getfeed(cmd.Arguments[0], cmd.Arguments[1])
+	// if err != nil {
+	// 	return err
+	// }
+	createFeedParams := database.CreateFeedParams{
+		ID:        int32(uuid.New().ID()),
+		Name:      cmd.Arguments[0],
+		Url:       cmd.Arguments[0],
+		UserID:    user.ID,
+		CreatedAt: time.Now(),
+		UpdatedAt: time.Now(),
+	}
+	createdFeed, err := a.DB.CreateFeed(context.Background(), createFeedParams)
+	if err != nil {
+		return err
+	}
+	fmt.Printf("%+v\n", createdFeed)
+
+	return nil
+}
+
+// func getfeed(url string) (*RSSFeed, error) {
+// 	ctx, cancelFunc := context.WithTimeout(context.Background(), 3*time.Second)
+// 	defer cancelFunc()
+// 	rssFeed, err := fetchFeed(ctx, url)
+// 	if err != nil {
+// 		return nil, err
+// 	}
+// 	return rssFeed, nil
+// }
+
+func handleAgg(a *application.App, cmd application.Command) error {
+	ctx, cancelFunc := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancelFunc()
+	rssFeed, err := fetchFeed(ctx, "https://www.wagslane.dev/index.xml")
+	if err != nil {
+		return err
+	}
+	fmt.Printf("Fetched Feed: %+v\n", rssFeed)
+	return nil
+}
+
+func fetchFeed(ctx context.Context, feedURL string) (*RSSFeed, error) {
+
+	req, err := http.NewRequestWithContext(ctx, "GET", feedURL, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Set("User-Agent", "gator")
+
+	client := http.DefaultClient
+
+	res, err := client.Do(req)
+
+	if err != nil {
+		return nil, err
+	}
+
+	resData, err := io.ReadAll(res.Body)
+	if err != nil {
+		return nil, err
+	}
+
+	var rssFeed RSSFeed
+
+	err = xml.Unmarshal(resData, &rssFeed)
+	if err != nil {
+		return nil, err
+	}
+
+	rssFeed.Channel.Title = html.UnescapeString(rssFeed.Channel.Title)
+	rssFeed.Channel.Description = html.UnescapeString(rssFeed.Channel.Description)
+
+	for _, item := range rssFeed.Channel.Item {
+		item.Title = html.UnescapeString(item.Title)
+		item.Description = html.UnescapeString(item.Description)
+	}
+
+	return &rssFeed, nil
 }
 
 func handleLogin(a *application.App, cmd application.Command) error {
@@ -139,9 +242,22 @@ func handleUsers(a *application.App, cmd application.Command) error {
 	return nil
 }
 
-func checkCMDArgs(cmd application.Command) error {
-	if len(cmd.Arguments) < 1 {
-		return fmt.Errorf(" %s command expects an argument", cmd.Name)
+func checkCMDArgs(cmd application.Command, nbrArgs ...int) error {
+	var maxArgs int
+	if len(nbrArgs) > 0 {
+		maxArgs = nbrArgs[0]
+		if len(cmd.Arguments) < maxArgs {
+			return fmt.Errorf(" %s command expects %d argument(s)", cmd.Name, maxArgs)
+		}
+		for _, arg := range cmd.Arguments[:maxArgs] {
+			if len(strings.Trim(arg, " ")) < 1 {
+				return fmt.Errorf("invalid argument provided")
+			}
+		}
+	} else {
+		if len(cmd.Arguments) < 1 {
+			return fmt.Errorf(" %s command expects one or more argument(s)", cmd.Name)
+		}
 	}
 	fmt.Println("command args length", len(cmd.Arguments))
 	if len(strings.Trim(cmd.Arguments[0], " ")) < 1 {
