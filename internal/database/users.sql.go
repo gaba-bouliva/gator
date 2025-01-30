@@ -54,12 +54,28 @@ func (q *Queries) DeleteAllUsers(ctx context.Context) error {
 	return err
 }
 
-const getUser = `-- name: GetUser :one
+const getUserByID = `-- name: GetUserByID :one
+SELECT id, created_at, updated_at, name FROM users WHERE id = $1  LIMIT 1
+`
+
+func (q *Queries) GetUserByID(ctx context.Context, id int32) (User, error) {
+	row := q.db.QueryRowContext(ctx, getUserByID, id)
+	var i User
+	err := row.Scan(
+		&i.ID,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.Name,
+	)
+	return i, err
+}
+
+const getUserByName = `-- name: GetUserByName :one
 SELECT id, created_at, updated_at, name FROM users WHERE name = $1  LIMIT 1
 `
 
-func (q *Queries) GetUser(ctx context.Context, name string) (User, error) {
-	row := q.db.QueryRowContext(ctx, getUser, name)
+func (q *Queries) GetUserByName(ctx context.Context, name string) (User, error) {
+	row := q.db.QueryRowContext(ctx, getUserByName, name)
 	var i User
 	err := row.Scan(
 		&i.ID,

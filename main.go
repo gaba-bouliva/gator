@@ -44,6 +44,7 @@ func main() {
 	app.RegisterCMD("users", handleUsers)
 	app.RegisterCMD("agg", handleAgg)
 	app.RegisterCMD("addfeed", handleAddFeed)
+	app.RegisterCMD("feeds", handleFeeds)
 
 	args := os.Args
 
@@ -67,6 +68,24 @@ func main() {
 	}
 }
 
+func handleFeeds(a *application.App, cmd application.Command) error {
+	feeds, err := a.DB.GetFeeds(context.Background())
+	if err != nil {
+		return err
+	}
+	for _, feed := range feeds {
+		usr, err := a.DB.GetUserByID(context.Background(), feed.UserID)
+		if err != nil {
+			return err
+		}
+		fmt.Println("* ", feed.Name)
+		fmt.Println("* ", feed.Url)
+		fmt.Println("* ", usr.Name)
+	}
+
+	return nil
+}
+
 func handleAddFeed(a *application.App, cmd application.Command) error {
 	nbrArgs := 2
 	err := checkCMDArgs(cmd, nbrArgs)
@@ -77,7 +96,7 @@ func handleAddFeed(a *application.App, cmd application.Command) error {
 	if err != nil {
 		return err
 	}
-	user, err := a.DB.GetUser(context.Background(), currentUsername)
+	user, err := a.DB.GetUserByName(context.Background(), currentUsername)
 	if err != nil {
 		return err
 	}
@@ -172,7 +191,7 @@ func handleLogin(a *application.App, cmd application.Command) error {
 
 	userName := cmd.Arguments[0]
 
-	user, err := a.DB.GetUser(context.Background(), userName)
+	user, err := a.DB.GetUserByName(context.Background(), userName)
 	if err != nil {
 		return err
 	}

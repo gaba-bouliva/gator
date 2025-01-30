@@ -8,8 +8,11 @@ VALUES (
 )
 RETURNING *;
 
--- name: GetUser :one
+-- name: GetUserByName :one
 SELECT * FROM users WHERE name = $1  LIMIT 1;
+
+-- name: GetUserByID :one
+SELECT * FROM users WHERE id = $1  LIMIT 1;
 
 -- name: DeleteAllUsers :exec
 DELETE FROM users;
