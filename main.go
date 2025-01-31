@@ -45,6 +45,8 @@ func main() {
 	app.RegisterCMD("agg", handleAgg)
 	app.RegisterCMD("addfeed", handleAddFeed)
 	app.RegisterCMD("feeds", handleFeeds)
+	app.RegisterCMD("follow", handleFollow)
+	app.RegisterCMD("following", handleFollowing)
 
 	args := os.Args
 
@@ -66,6 +68,74 @@ func main() {
 		fmt.Println(err)
 		os.Exit(1)
 	}
+}
+
+func handleFollowing(a *application.App, cmd application.Command) error {
+	username, err := a.Config.GetCurrentUser()
+	if err != nil {
+		return err
+	}
+
+	user, err := a.DB.GetUserByName(context.Background(), username)
+	if err != nil {
+		return err
+	}
+
+	usrFeedFollowings, err := a.DB.GetFeedFollowsForUser(context.Background(), user.ID)
+	if err != nil {
+		return err
+	}
+
+	for _, feedsFollow := range usrFeedFollowings {
+		fmt.Println("feed name: ", feedsFollow.FeedName)
+	}
+
+	return nil
+}
+
+func handleFollow(a *application.App, cmd application.Command) error {
+	nbrArgs := 1
+	err := checkCMDArgs(cmd, nbrArgs)
+	if err != nil {
+		return err
+	}
+
+	username, err := a.Config.GetCurrentUser()
+	if err != nil {
+		return err
+	}
+
+	user, err := a.DB.GetUserByName(context.Background(), username)
+	if err != nil {
+		return err
+	}
+
+	feed, err := a.DB.GetFeedByURL(context.Background(), cmd.Arguments[0])
+	if err != nil {
+		if err.Error() == "sql: no rows in result set" {
+			return fmt.Errorf("feed not found with url %s", cmd.Arguments[0])
+		} else {
+			return err
+		}
+	}
+
+	createdFeedFollowParam := database.CreateFeedFollowParams{
+		ID:        int32(uuid.New().ID()),
+		CreatedAt: time.Now(),
+		UpdatedAt: time.Now(),
+		UserID:    user.ID,
+		FeedsID:   feed.ID,
+	}
+	feed_follow, err := a.DB.CreateFeedFollow(context.Background(), createdFeedFollowParam)
+	if err != nil {
+		fmt.Println("error creating feed_follow")
+		return err
+	}
+
+	fmt.Println(feed_follow.FeedName)
+	fmt.Println(feed_follow.UserName)
+
+	return nil
 }
 
 func handleFeeds(a *application.App, cmd application.Command) error {
@@ -108,7 +178,7 @@ func handleAddFeed(a *application.App, cmd application.Command) error {
 	createFeedParams := database.CreateFeedParams{
 		ID:        int32(uuid.New().ID()),
 		Name:      cmd.Arguments[0],
-		Url:       cmd.Arguments[0],
+		Url:       cmd.Arguments[1],
 		UserID:    user.ID,
 		CreatedAt: time.Now(),
 		UpdatedAt: time.Now(),
@@ -117,6 +187,20 @@ func handleAddFeed(a *application.App, cmd application.Command) error {
 	if err != nil {
 		return err
 	}
+
+	createdFeedFollowParam := database.CreateFeedFollowParams{
+		ID:        int32(uuid.New().ID()),
+		CreatedAt: time.Now(),
+		UpdatedAt: time.Now(),
+		UserID:    user.ID,
+		FeedsID:   createdFeed.ID,
+	}
+	_, err = a.DB.CreateFeedFollow(context.Background(), createdFeedFollowParam)
+	if err != nil {
+		fmt.Println("error creating associated feed_follow")
+		return err
+	}
+
 	fmt.Printf("%+v\n", createdFeed)
 
 	return nil
@@ -278,7 +362,6 @@ func checkCMDArgs(cmd application.Command, nbrArgs ...int) error {
 			return fmt.Errorf(" %s command expects one or more argument(s)", cmd.Name)
 		}
 	}
-	fmt.Println("command args length", len(cmd.Arguments))
 	if len(strings.Trim(cmd.Arguments[0], " ")) < 1 {
 		return fmt.Errorf("invalid argument provided")
 	}
