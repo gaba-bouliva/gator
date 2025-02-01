@@ -41,12 +41,12 @@ func main() {
 	app.RegisterCMD("login", handleLogin)
 	app.RegisterCMD("register", handleRegister)
 	app.RegisterCMD("reset", handleReset)
-	app.RegisterCMD("users", handleUsers)
-	app.RegisterCMD("agg", handleAgg)
-	app.RegisterCMD("addfeed", handleAddFeed)
-	app.RegisterCMD("feeds", handleFeeds)
-	app.RegisterCMD("follow", handleFollow)
-	app.RegisterCMD("following", handleFollowing)
+	app.RegisterCMD("users", middlewareLoggedIn(handleUsers))
+	app.RegisterCMD("agg", middlewareLoggedIn(handleAgg))
+	app.RegisterCMD("addfeed", middlewareLoggedIn(handleAddFeed))
+	app.RegisterCMD("feeds", middlewareLoggedIn(handleFeeds))
+	app.RegisterCMD("follow", middlewareLoggedIn(handleFollow))
+	app.RegisterCMD("following", middlewareLoggedIn(handleFollowing))
 
 	args := os.Args
 
@@ -70,16 +70,7 @@ func main() {
 	}
 }
 
-func handleFollowing(a *application.App, cmd application.Command) error {
-	username, err := a.Config.GetCurrentUser()
-	if err != nil {
-		return err
-	}
-
-	user, err := a.DB.GetUserByName(context.Background(), username)
-	if err != nil {
-		return err
-	}
+func handleFollowing(a *application.App, cmd application.Command, user database.User) error {
 
 	usrFeedFollowings, err := a.DB.GetFeedFollowsForUser(context.Background(), user.ID)
 	if err != nil {
@@ -93,19 +84,9 @@ func handleFollowing(a *application.App, cmd application.Command) error {
 	return nil
 }
 
-func handleFollow(a *application.App, cmd application.Command) error {
+func handleFollow(a *application.App, cmd application.Command, user database.User) error {
 	nbrArgs := 1
 	err := checkCMDArgs(cmd, nbrArgs)
-	if err != nil {
-		return err
-	}
-
-	username, err := a.Config.GetCurrentUser()
-	if err != nil {
-		return err
-	}
-
-	user, err := a.DB.GetUserByName(context.Background(), username)
 	if err != nil {
 		return err
 	}
@@ -138,35 +119,23 @@ func handleFollow(a *application.App, cmd application.Command) error {
 	return nil
 }
 
-func handleFeeds(a *application.App, cmd application.Command) error {
+func handleFeeds(a *application.App, cmd application.Command, user database.User) error {
 	feeds, err := a.DB.GetFeeds(context.Background())
 	if err != nil {
 		return err
 	}
 	for _, feed := range feeds {
-		usr, err := a.DB.GetUserByID(context.Background(), feed.UserID)
-		if err != nil {
-			return err
-		}
 		fmt.Println("* ", feed.Name)
 		fmt.Println("* ", feed.Url)
-		fmt.Println("* ", usr.Name)
+		fmt.Println("* ", user.Name)
 	}
 
 	return nil
 }
 
-func handleAddFeed(a *application.App, cmd application.Command) error {
+func handleAddFeed(a *application.App, cmd application.Command, user database.User) error {
 	nbrArgs := 2
 	err := checkCMDArgs(cmd, nbrArgs)
-	if err != nil {
-		return err
-	}
-	currentUsername, err := a.Config.GetCurrentUser()
-	if err != nil {
-		return err
-	}
-	user, err := a.DB.GetUserByName(context.Background(), currentUsername)
 	if err != nil {
 		return err
 	}
@@ -216,7 +185,7 @@ func handleAddFeed(a *application.App, cmd application.Command) error {
 // 	return rssFeed, nil
 // }
 
-func handleAgg(a *application.App, cmd application.Command) error {
+func handleAgg(a *application.App, cmd application.Command, user database.User) error {
 	ctx, cancelFunc := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancelFunc()
 	rssFeed, err := fetchFeed(ctx, "https://www.wagslane.dev/index.xml")
@@ -275,12 +244,12 @@ func handleLogin(a *application.App, cmd application.Command) error {
 
 	userName := cmd.Arguments[0]
 
-	user, err := a.DB.GetUserByName(context.Background(), userName)
+	usr, err := a.DB.GetUserByName(context.Background(), userName)
 	if err != nil {
 		return err
 	}
 
-	err = a.Config.SetUser(user.Name)
+	err = a.Config.SetUser(usr.Name)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -324,7 +293,7 @@ func handleReset(a *application.App, cmd application.Command) error {
 	return nil
 }
 
-func handleUsers(a *application.App, cmd application.Command) error {
+func handleUsers(a *application.App, cmd application.Command, user database.User) error {
 	users, err := a.DB.GetUsers(context.Background())
 	if err != nil {
 		return err
