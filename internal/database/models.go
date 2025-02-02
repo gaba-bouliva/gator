@@ -5,16 +5,18 @@
 package database
 
 import (
+	"database/sql"
 	"time"
 )
 
 type Feed struct {
-	ID        int32
-	CreatedAt time.Time
-	UpdatedAt time.Time
-	Name      string
-	Url       string
-	UserID    int32
+	ID            int32
+	CreatedAt     time.Time
+	UpdatedAt     time.Time
+	LastFetchedAt sql.NullTime
+	Name          string
+	Url           string
+	UserID        int32
 }
 
 type FeedsFollow struct {
@@ -23,6 +25,17 @@ type FeedsFollow struct {
 	UpdatedAt time.Time
 	UserID    int32
 	FeedsID   int32
+}
+
+type Post struct {
+	ID          int32
+	CreatedAt   time.Time
+	UpdatedAt   time.Time
+	PublishedAt time.Time
+	Title       string
+	Description string
+	Url         string
+	FeedID      int32
 }
 
 type User struct {
