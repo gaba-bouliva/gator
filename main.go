@@ -10,6 +10,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 
@@ -47,6 +48,8 @@ func main() {
 	app.RegisterCMD("feeds", middlewareLoggedIn(handleFeeds))
 	app.RegisterCMD("follow", middlewareLoggedIn(handleFollow))
 	app.RegisterCMD("following", middlewareLoggedIn(handleFollowing))
+	app.RegisterCMD("unfollow", middlewareLoggedIn(unfollow))
+	app.RegisterCMD("browse", middlewareLoggedIn(handleBrowse))
 
 	args := os.Args
 
@@ -68,6 +71,100 @@ func main() {
 		fmt.Println(err)
 		os.Exit(1)
 	}
+}
+
+func scrapeFeeds(a *application.App) error {
+	nextFeed, err := a.DB.GetNextFeedToFetch(context.Background())
+	if err != nil {
+		return err
+	}
+	markFeedFetchedParams := database.MarkFeedFetchedParams{
+		LastFetchedAt: sql.NullTime{Time: time.Now(), Valid: true},
+		UpdatedAt:     time.Now(),
+		ID:            nextFeed.ID,
+	}
+	err = a.DB.MarkFeedFetched(context.Background(), markFeedFetchedParams)
+	if err != nil {
+		return err
+	}
+	rssFeed, err := fetchFeed(context.Background(), nextFeed.Url)
+	if err != nil {
+		return err
+	}
+
+	for _, item := range rssFeed.Channel.Items {
+		fmt.Println(item.Title)
+		_, err := a.DB.GetPostByUrl(context.Background(), item.Link)
+		if err == nil {
+			continue
+		}
+		pubDate, err := tryParseDate(item.PubDate)
+		if err != nil {
+			return err
+		}
+		createdPostParams := database.CreatePostParams{
+			ID:          int32(uuid.New().ID()),
+			CreatedAt:   time.Now(),
+			UpdatedAt:   time.Now(),
+			PublishedAt: pubDate,
+			Title:       item.Title,
+			Description: item.Description,
+			Url:         item.Link,
+			FeedID:      nextFeed.ID,
+		}
+		_, err = a.DB.CreatePost(context.Background(), createdPostParams)
+		if err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func handleBrowse(a *application.App, cmd application.Command, user database.User) error {
+	limit := 2
+	if len(cmd.Arguments) > 0 {
+		parseIntArg, err := strconv.Atoi(cmd.Arguments[0])
+		if err != nil {
+			return err
+		}
+		limit = parseIntArg
+	}
+	posts, err := a.DB.GetPosts(context.Background(), int32(limit))
+	if err != nil {
+		return err
+	}
+	for _, post := range posts {
+		fmt.Printf("* %+v", post)
+		fmt.Println()
+	}
+	return nil
+}
+
+func tryParseDate(dateStr string) (time.Time, error) {
+	formats := []string{
+		time.RFC1123,
+		time.RFC1123Z,
+		time.RFC3339,
+		time.RFC3339Nano,
+		time.RFC822,
+		time.RFC822Z,
+		time.RFC850,
+		"2006-01-02 15:04:05",  // Example: 2025-02-02 14:30:00
+		"2006-01-02T15:04:05Z", // Example: 2025-02-02T14:30:00Z
+		"02 Jan 2006",          // Example: 02 Feb 2025
+		"2006-01-02",           // Example: 2025-02-02
+		"02/01/2006",           // Example: 02/02/2025
+	}
+
+	for _, format := range formats {
+		t, err := time.Parse(format, dateStr)
+		if err == nil {
+			return t, nil
+		}
+	}
+
+	return time.Time{}, fmt.Errorf("unable to parse date: %s", dateStr)
 }
 
 func handleFollowing(a *application.App, cmd application.Command, user database.User) error {
@@ -117,6 +214,33 @@ func handleFollow(a *application.App, cmd application.Command, user database.Use
 	fmt.Println(feed_follow.UserName)
 
 	return nil
+}
+
+func unfollow(a *application.App, cmd application.Command, user database.User) error {
+
+	err := checkCMDArgs(cmd, 1)
+	if err != nil {
+		return err
+	}
+
+	url := cmd.Arguments[0]
+	feed, err := a.DB.GetFeedByURL(context.Background(), url)
+	if err != nil {
+		return err
+	}
+
+	deleteFeedFollowParam := database.DeleteFeedFollowParams{
+		UserID:  user.ID,
+		FeedsID: feed.ID,
+	}
+
+	err = a.DB.DeleteFeedFollow(context.Background(), deleteFeedFollowParam)
+	if err != nil {
+		return err
+	}
+
+	return nil
+
 }
 
 func handleFeeds(a *application.App, cmd application.Command, user database.User) error {
@@ -186,6 +310,24 @@ func handleAddFeed(a *application.App, cmd application.Command, user database.Us
 // }
 
 func handleAgg(a *application.App, cmd application.Command, user database.User) error {
+	err := checkCMDArgs(cmd, 1)
+	if err != nil {
+		return err
+	}
+	reqWaitTime, err := time.ParseDuration(cmd.Arguments[0])
+	if err != nil {
+		return err
+	}
+	fmt.Println("Collecting feeds every ", reqWaitTime)
+	ticker := time.NewTicker(reqWaitTime)
+	defer ticker.Stop()
+	for range ticker.C {
+		err := scrapeFeeds(a)
+		if err != nil {
+			return err
+		}
+	}
+
 	ctx, cancelFunc := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancelFunc()
 	rssFeed, err := fetchFeed(ctx, "https://www.wagslane.dev/index.xml")
@@ -228,7 +370,7 @@ func fetchFeed(ctx context.Context, feedURL string) (*RSSFeed, error) {
 	rssFeed.Channel.Title = html.UnescapeString(rssFeed.Channel.Title)
 	rssFeed.Channel.Description = html.UnescapeString(rssFeed.Channel.Description)
 
-	for _, item := range rssFeed.Channel.Item {
+	for _, item := range rssFeed.Channel.Items {
 		item.Title = html.UnescapeString(item.Title)
 		item.Description = html.UnescapeString(item.Description)
 	}
