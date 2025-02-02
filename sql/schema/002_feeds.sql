@@ -3,6 +3,7 @@ CREATE TABLE feeds (
     id SERIAL NOT NULL PRIMARY KEY,
     created_at TIMESTAMP NOT NULL,
     updated_at TIMESTAMP NOT NULL,
+    last_fetched_at TIMESTAMP,
     name VARCHAR(255) NOT NULL,
     url VARCHAR(255) NOT NULL UNIQUE,
     user_id INT NOT NULL,
